@@ -17,6 +17,7 @@ import AppWithNavigationState, {
   navigationReducer, 
   navigationMiddleware,
 } from './navigation';
+import auth from './reducers/auth.reducer';
 
 const URL = 'localhost:8080'; // set your comp's url here
 
@@ -24,6 +25,7 @@ const store = createStore(
   combineReducers({
     apollo: apolloReducer,
     nav: navigationReducer,
+    auth,
   }),
   {}, // initial state
   composeWithDevTools(
