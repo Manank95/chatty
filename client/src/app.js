@@ -18,12 +18,16 @@ import { SubscriptionClient } from 'subscriptions-transport-ws';
 import { PersistGate } from 'redux-persist/lib/integration/react';
 import { persistStore, persistCombineReducers } from 'redux-persist';
 import thunk from 'redux-thunk';
+import { setContext } from 'apollo-link-context';
+import { onError } from 'apollo-link-error';
+import _ from 'lodash';
 
 import AppWithNavigationState, {
   navigationReducer, 
   navigationMiddleware,
 } from './navigation';
 import auth from './reducers/auth.reducer';
+import { logout } from './actions/auth.actions';
 
 const URL = 'localhost:8080'; // set your comp's url here
 
@@ -56,6 +60,46 @@ const reduxLink = new ReduxLink(store);
 
 const httpLink = createHttpLink({ uri: `http://${URL}/graphql` });
 
+// middleware for requests
+const middlewareLink = setContext((req, previousContext) => {
+  // get the authentication token from local storage if it exists
+  const { jwt } = store.getState().auth;
+  if (jwt) {
+    return {
+      headers: {
+        authorization: `Bearer ${jwt}`,
+      },
+    };
+  }
+
+  return previousContext;
+});
+
+// afterware for responses
+const errorLink = onError(({ graphQLErrors, networkError }) => {
+  let shouldLogout = false;
+  if (graphQLErrors) {
+    console.log({ graphQLErrors });
+    graphQLErrors.forEach(({ message, locations, path }) => {
+      console.log({ message, locations, path });
+      if (message === 'Unauthorized') {
+        shouldLogout = true;
+      }
+    });
+
+    if (shouldLogout) {
+      store.dispatch(logout());
+    }
+  }
+  if (networkError) {
+    console.log('[Network error]:');
+    console.log({ networkError });
+    if (networkError.statusCode === 401) {
+      logout();
+    }
+  }
+});
+
 // Create WebSocket client
 export const wsClient = new SubscriptionClient(`ws://${URL}/subscriptions`, {
   reconnect: true,
@@ -78,8 +122,9 @@ const requestLink = ({ queryOrMutationLink, subscriptionLink }) =>
 
 const link = ApolloLink.from([
   reduxLink,
+  errorLink,
   requestLink({
-    queryOrMutationLink: httpLink,
+    queryOrMutationLink: middlewareLink.concat(httpLink),
     subscriptionLink: webSocketLink,
   }),
 ]);
